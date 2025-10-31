@@ -1,0 +1,201 @@
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'project')
+    EXEC('CREATE SCHEMA project');
+GO
+
+
+IF OBJECT_ID('project.TRACK_TAGGED_GENRE','U') IS NOT NULL DROP TABLE project.TRACK_TAGGED_GENRE;
+IF OBJECT_ID('project.PLAYLIST_CONTAINS_TRACK','U') IS NOT NULL DROP TABLE project.PLAYLIST_CONTAINS_TRACK;
+IF OBJECT_ID('project.USER_PLAYLIST_FOLLOW','U') IS NOT NULL DROP TABLE project.USER_PLAYLIST_FOLLOW;
+IF OBJECT_ID('project.USER_FOLLOWS_ARTIST','U') IS NOT NULL DROP TABLE project.USER_FOLLOWS_ARTIST;
+IF OBJECT_ID('project.USER_SAVES_TRACK','U') IS NOT NULL DROP TABLE project.USER_SAVES_TRACK;
+IF OBJECT_ID('project.ARTIST_MEMBERSHIP','U') IS NOT NULL DROP TABLE project.ARTIST_MEMBERSHIP;
+IF OBJECT_ID('project.TRACK_PERFORMED_BY_ARTIST','U') IS NOT NULL DROP TABLE project.TRACK_PERFORMED_BY_ARTIST;
+IF OBJECT_ID('project.TRACK','U') IS NOT NULL DROP TABLE project.TRACK;
+IF OBJECT_ID('project.PLAYLIST','U') IS NOT NULL DROP TABLE project.PLAYLIST;
+IF OBJECT_ID('project.GENRE','U') IS NOT NULL DROP TABLE project.GENRE;
+IF OBJECT_ID('project.RELEASE','U') IS NOT NULL DROP TABLE project.RELEASE;
+IF OBJECT_ID('project.ARTIST','U') IS NOT NULL DROP TABLE project.ARTIST;
+IF OBJECT_ID('project.LABEL','U') IS NOT NULL DROP TABLE project.LABEL;
+IF OBJECT_ID('project.USER_PROFILE','U') IS NOT NULL DROP TABLE project.USER_PROFILE;
+IF OBJECT_ID('project.APP_USER','U') IS NOT NULL DROP TABLE project.APP_USER;
+GO
+
+/* =================== ENTITIES (8) =================== */
+
+CREATE TABLE project.APP_USER (
+    user_id         INT           NOT NULL,
+    first_name      VARCHAR(100)  NOT NULL,
+    last_name       VARCHAR(100)  NOT NULL,
+    country         VARCHAR(100)  NULL,
+    email           VARCHAR(255)  NOT NULL,
+    date_of_birth   DATE          NULL,
+    public_username VARCHAR(100)  NOT NULL,
+    registered      DATETIME2     NOT NULL,
+    last_login      DATETIME2     NULL,
+    password_hash   VARCHAR(255)  NOT NULL,
+    CONSTRAINT PK_APP_USER PRIMARY KEY (user_id),
+    CONSTRAINT UQ_APP_USER_Email UNIQUE (email),
+    CONSTRAINT UQ_APP_USER_PublicUsername UNIQUE (public_username)
+);
+
+CREATE TABLE project.USER_PROFILE (
+    user_id            INT            NOT NULL,
+    bio_text           VARCHAR(2000)  NULL,
+    profile_visibility VARCHAR(20)    NULL,
+    profile_pic_url    VARCHAR(500)   NULL,
+    created            DATETIME2      NOT NULL,
+    last_updated       DATETIME2      NOT NULL,
+    CONSTRAINT PK_USER_PROFILE PRIMARY KEY (user_id),
+    CONSTRAINT FK_UserProfile_User_owns
+        FOREIGN KEY (user_id) REFERENCES project.APP_USER(user_id) ON DELETE CASCADE
+);
+
+CREATE TABLE project.LABEL (
+    label_id INT           NOT NULL,
+    name     VARCHAR(200)  NOT NULL,
+    country  VARCHAR(100)  NULL,
+    CONSTRAINT PK_LABEL PRIMARY KEY (label_id)
+);
+
+CREATE TABLE project.ARTIST (
+    artist_id        INT            NOT NULL,
+    artist_name      VARCHAR(200)   NOT NULL,
+    country          VARCHAR(100)   NULL,
+    bio              VARCHAR(2000)  NULL,
+    artist_image_url VARCHAR(500)   NULL,
+    is_group         BIT            NOT NULL,
+    CONSTRAINT PK_ARTIST PRIMARY KEY (artist_id)
+);
+
+CREATE TABLE project.RELEASE (
+    release_id        INT           NOT NULL,
+    title             VARCHAR(200)  NOT NULL,
+    [type]            VARCHAR(50)   NOT NULL,
+    cover_image_url   VARCHAR(500)  NULL,
+    primary_artist_id INT           NOT NULL,
+    label_id          INT           NOT NULL,
+    publish_date      DATE          NOT NULL,
+    CONSTRAINT PK_RELEASE PRIMARY KEY (release_id),
+    CONSTRAINT FK_Release_PrimaryArtist_primary_artist
+        FOREIGN KEY (primary_artist_id) REFERENCES project.ARTIST(artist_id),
+    CONSTRAINT FK_Release_Label_publishes
+        FOREIGN KEY (label_id) REFERENCES project.LABEL(label_id)
+);
+
+CREATE TABLE project.TRACK (
+    track_id         INT           NOT NULL,
+    title            VARCHAR(200)  NOT NULL,
+    duration_ms      INT           NOT NULL,
+    explicit_content BIT           NOT NULL,
+    audio_file_url   VARCHAR(500)  NULL,
+    release_id       INT           NOT NULL,
+    track_num        INT           NOT NULL,
+    CONSTRAINT PK_TRACK PRIMARY KEY (track_id),
+    CONSTRAINT CK_Track_TrackNum_Positive CHECK (track_num > 0),
+    CONSTRAINT FK_Track_Release_is_on
+        FOREIGN KEY (release_id) REFERENCES project.RELEASE(release_id),
+    CONSTRAINT UQ_Track_Release_TrackNum UNIQUE (release_id, track_num)
+);
+
+CREATE TABLE project.GENRE (
+    genre_id   INT           NOT NULL,
+    genre_name VARCHAR(100)  NOT NULL,
+    CONSTRAINT PK_GENRE PRIMARY KEY (genre_id),
+    CONSTRAINT UQ_GENRE_Name UNIQUE (genre_name)
+);
+
+CREATE TABLE project.PLAYLIST (
+    playlist_id        INT            NOT NULL,
+    name               VARCHAR(200)   NOT NULL,
+    created            DATETIME2      NOT NULL,
+    updated            DATETIME2      NOT NULL,
+    is_public          BIT            NOT NULL,
+    description        VARCHAR(1000)  NULL,
+    cover_image_url    VARCHAR(500)   NULL,
+    created_by_user_id INT            NOT NULL,
+    CONSTRAINT PK_PLAYLIST PRIMARY KEY (playlist_id),
+    CONSTRAINT FK_Playlist_CreatedByUser_creates
+        FOREIGN KEY (created_by_user_id) REFERENCES project.APP_USER(user_id)
+);
+
+/* ============== Many to Many RELATIONSHIPS (7) ============== */
+
+CREATE TABLE project.TRACK_PERFORMED_BY_ARTIST (
+    track_id  INT NOT NULL,
+    artist_id INT NOT NULL,
+    CONSTRAINT PK_TrackPerformedByArtist PRIMARY KEY (track_id, artist_id),
+    CONSTRAINT FK_TrackPerformedByArtist_Track_performed_by
+        FOREIGN KEY (track_id)  REFERENCES project.TRACK(track_id)  ON DELETE CASCADE,
+    CONSTRAINT FK_TrackPerformedByArtist_Artist_performed_by
+        FOREIGN KEY (artist_id) REFERENCES project.ARTIST(artist_id) ON DELETE CASCADE
+);
+
+-- FIX: remove ON DELETE CASCADE on both FKs below to avoid multiple cascade paths
+CREATE TABLE project.ARTIST_MEMBERSHIP (
+    group_artist_id INT NOT NULL,
+    solo_artist_id  INT NOT NULL,
+    CONSTRAINT PK_ArtistMembership PRIMARY KEY (group_artist_id, solo_artist_id),
+    CONSTRAINT FK_ArtistMembership_Group_member_of
+        FOREIGN KEY (group_artist_id) REFERENCES project.ARTIST(artist_id),
+    CONSTRAINT FK_ArtistMembership_Solo_member_of
+        FOREIGN KEY (solo_artist_id)  REFERENCES project.ARTIST(artist_id),
+    CONSTRAINT CK_ArtistMembership_NoSelf CHECK (group_artist_id <> solo_artist_id)
+);
+
+CREATE TABLE project.USER_SAVES_TRACK (
+    user_id  INT        NOT NULL,
+    track_id INT        NOT NULL,
+    saved    DATETIME2  NOT NULL,
+    CONSTRAINT PK_UserSavesTrack PRIMARY KEY (user_id, track_id),
+    CONSTRAINT FK_UserSavesTrack_User_saves
+        FOREIGN KEY (user_id)  REFERENCES project.APP_USER(user_id) ON DELETE CASCADE,
+    CONSTRAINT FK_UserSavesTrack_Track_saves
+        FOREIGN KEY (track_id) REFERENCES project.TRACK(track_id)
+);
+
+CREATE TABLE project.USER_FOLLOWS_ARTIST (
+    user_id   INT        NOT NULL,
+    artist_id INT        NOT NULL,
+    followed  DATETIME2  NOT NULL,
+    CONSTRAINT PK_UserFollowsArtist PRIMARY KEY (user_id, artist_id),
+    CONSTRAINT FK_UserFollowsArtist_User_follows_artist
+        FOREIGN KEY (user_id)   REFERENCES project.APP_USER(user_id) ON DELETE CASCADE,
+    CONSTRAINT FK_UserFollowsArtist_Artist_follows_artist
+        FOREIGN KEY (artist_id) REFERENCES project.ARTIST(artist_id) ON DELETE CASCADE
+);
+
+CREATE TABLE project.USER_PLAYLIST_FOLLOW (
+    user_id     INT NOT NULL,
+    playlist_id INT NOT NULL,
+    can_edit    BIT NOT NULL CONSTRAINT DF_UserPlaylistFollow_CanEdit DEFAULT (0),
+    CONSTRAINT PK_UserPlaylistFollow PRIMARY KEY (user_id, playlist_id),
+    CONSTRAINT FK_UserPlaylistFollow_User_follows_playlist
+        FOREIGN KEY (user_id)     REFERENCES project.APP_USER(user_id) ON DELETE CASCADE,
+    CONSTRAINT FK_UserPlaylistFollow_Playlist_follows_playlist
+        FOREIGN KEY (playlist_id) REFERENCES project.PLAYLIST(playlist_id) ON DELETE CASCADE
+);
+
+CREATE TABLE project.PLAYLIST_CONTAINS_TRACK (
+    playlist_id INT        NOT NULL,
+    track_id    INT        NOT NULL,
+    track_num   INT        NOT NULL,
+    added       DATETIME2  NOT NULL,
+    CONSTRAINT PK_PlaylistContainsTrack PRIMARY KEY (playlist_id, track_id),
+    CONSTRAINT CK_PlaylistContainsTrack_TrackNum_Positive CHECK (track_num > 0),
+    CONSTRAINT UQ_PlaylistContainsTrack_UniqueTrackNum UNIQUE (playlist_id, track_num),
+    CONSTRAINT FK_PlaylistContainsTrack_Playlist_contains
+        FOREIGN KEY (playlist_id) REFERENCES project.PLAYLIST(playlist_id) ON DELETE CASCADE,
+    CONSTRAINT FK_PlaylistContainsTrack_Track_contains
+        FOREIGN KEY (track_id)    REFERENCES project.TRACK(track_id)
+);
+
+CREATE TABLE project.TRACK_TAGGED_GENRE (
+    track_id INT NOT NULL,
+    genre_id INT NOT NULL,
+    CONSTRAINT PK_TrackTaggedGenre PRIMARY KEY (track_id, genre_id),
+    CONSTRAINT FK_TrackTaggedGenre_Track_tagged_with
+        FOREIGN KEY (track_id) REFERENCES project.TRACK(track_id) ON DELETE CASCADE,
+    CONSTRAINT FK_TrackTaggedGenre_Genre_tagged_with
+        FOREIGN KEY (genre_id) REFERENCES project.GENRE(genre_id) ON DELETE CASCADE
+);
+GO
